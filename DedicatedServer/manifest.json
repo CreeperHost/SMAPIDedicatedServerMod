@@ -1,0 +1,11 @@
+{
+  "Name": "DedicatedServer",
+  "Author": "CreeperHost",
+  "Version": "2.0.0",
+  "Description": "Automatically hosts a farm and manages the host farmer for unattended multiplayer.",
+  "UniqueID": "objectmanagermanager.DedicatedServer",
+  "EntryDll": "DedicatedServer.dll",
+  "MinimumGameVersion": "1.6.15",
+  "MinimumApiVersion": "4.5.2",
+  "UpdateKeys": []
+}

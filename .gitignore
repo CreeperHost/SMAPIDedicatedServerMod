@@ -1,0 +1,35 @@
+# Local game installations, dependencies, saves, and diagnostics
+/.local/
+
+# Development helpers and tests
+/scripts/
+/tests/
+
+# Packaged releases and validation artifacts
+/artifacts/
+/*.zip
+
+# .NET build and test output
+**/bin/
+**/obj/
+**/TestResults/
+*.coverage
+*.coveragexml
+
+# Local IDE settings
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Generated server status and logs
+.playerlist.json
+.playerlist.json.tmp
+*.log
+
+# Operating system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
