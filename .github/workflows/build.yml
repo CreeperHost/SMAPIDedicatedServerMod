@@ -1,0 +1,92 @@
+name: Build and release mod
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set version from tag
+        run: |
+          $manifestPath = 'DedicatedServer/manifest.json'
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          $manifest.Version = $env:GITHUB_REF_NAME
+          $manifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
+
+      - name: Check out game and SMAPI reference assemblies
+        uses: actions/checkout@v7
+        with:
+          repository: StardewModders/mod-reference-assemblies
+          # Stardew Valley 1.6.15 / SMAPI 4.4.0; build references only.
+          ref: 0141355fecb8536715ecff22f99374b5e632cbed
+          path: .local/ci-reference-assemblies
+          persist-credentials: false
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: |
+          $references = (Resolve-Path '.local/ci-reference-assemblies').Path
+          dotnet build DedicatedServer/DedicatedServer.csproj `
+            --configuration Release --output "$env:RUNNER_TEMP/mod-build" --nologo `
+            "-p:GamePath=$references" "-p:Version=$env:GITHUB_REF_NAME" `
+            -p:EnableModDeploy=false -p:EnableModZip=false
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package mod
+        id: package
+        run: |
+          $packageFolder = Join-Path $env:RUNNER_TEMP 'mod-package/DedicatedServer'
+          New-Item -ItemType Directory -Path $packageFolder -Force | Out-Null
+
+          # Copy only mod files: never bundle game or SMAPI reference assemblies.
+          Copy-Item -LiteralPath "$env:RUNNER_TEMP/mod-build/DedicatedServer.dll", `
+            'DedicatedServer/manifest.json', 'LICENSE' -Destination $packageFolder
+
+          $zipPath = Join-Path $env:RUNNER_TEMP "DedicatedServer-$env:GITHUB_REF_NAME.zip"
+          Compress-Archive -LiteralPath $packageFolder -DestinationPath $zipPath -CompressionLevel Optimal
+          "path=$zipPath" >> $env:GITHUB_OUTPUT
+
+      - name: Upload mod ZIP
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.package.outputs.path }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MOD_ZIP: ${{ steps.package.outputs.path }}
+        run: |
+          $version = [regex]::Escape($env:GITHUB_REF_NAME)
+          $changelog = Get-Content -LiteralPath CHANGELOG.md -Raw
+          $notes = [regex]::Match($changelog, "(?ms)^## \[$version\][^\r\n]*\r?\n(?<notes>.*?)(?=^## |\z)").Groups['notes'].Value.Trim()
+          if (!$notes) { throw "No release notes found for $env:GITHUB_REF_NAME in CHANGELOG.md." }
+          $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          $notes | Set-Content -LiteralPath $notesPath -Encoding utf8NoBOM
+
+          gh release create $env:GITHUB_REF_NAME $env:MOD_ZIP `
+            --repo $env:GH_REPO --verify-tag --title $env:GITHUB_REF_NAME `
+            --notes-file $notesPath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
